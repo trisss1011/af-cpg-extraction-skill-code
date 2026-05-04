@@ -1,0 +1,26 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Office temp
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Local scratch
+99_Scratch/
+backups/
+*_backup/
+*_수정전/
+
+# Local working files
+AF_CPG_data_extraction_2*.xlsx
+세션_작업일지_*.md
+작업노트_*.md
+수정_추적_리스트.md
