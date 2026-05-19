@@ -1,6 +1,6 @@
 # cpg-data-extraction / scripts/
 
-> v3.0 전략 C (template + helper scripts) 구성 요소.
+> v3.2 전략 C (template + helper scripts) 구성 요소.
 > 이 폴더는 `cpg-data-extraction` 스킬 저장 파이프라인을 자동화하는 Python 스크립트 세트입니다.
 
 ---
@@ -10,8 +10,9 @@
 | 파일 | 역할 | 호출 주체 |
 |---|---|---|
 | `save_extract.py` | 1편 논문 JSON → 단독 엑셀(`AF_extract_<번호>_<id>.xlsx`) 저장 | Claude (추출 세션) |
-| `migrate_format.py` | v2.x 이전 추출 파일에 v3.0 서식 일괄 적용 | 사용자/조정자 (필요 시) |
-| `version_info.py` | 엑셀 메타데이터에 스킬 버전 기록·조회 | 위 두 스크립트 내부 호출 + CLI |
+| `migrate_format.py` | v2.x 이전 추출 파일에 v3.0+ 서식 일괄 적용 | 사용자/조정자 (필요 시) |
+| `migrate_to_v3.2.py` (v3.2 신규) | 47열(v3.0/v3.1) → 48열(v3.2) 헤더 마이그레이션 (AU=analysis_set 삽입, notes→AV 시프트) | 사용자 (v3.2 업그레이드 시 1회) |
+| `version_info.py` | 엑셀 메타데이터에 스킬 버전 기록·조회 | 위 스크립트들 내부 호출 + CLI |
 
 **핵심 원칙**: 이 스크립트들은 **데이터 값을 생성하지 않는다**. Claude가 만든 JSON을 받아 엑셀 서식으로 변환할 뿐이다. 추출 정확성은 Claude + 사용자 검토가 책임진다.
 
@@ -149,11 +150,11 @@ python 00_skills/cpg-data-extraction/scripts/save_extract.py 99_Scratch/_tmp_2_Z
 
 ### 목적
 
-v2.x 시절 저장된 기존 추출 파일(`AF_extract_*.xlsx`)에 v3.0의 추가 서식(freeze panes, 숫자 서식 등)을 일괄 적용.
+v2.x 시절 저장된 기존 추출 파일(`AF_extract_*.xlsx`)에 v3.2의 추가 서식(freeze panes, 숫자 서식 등)을 일괄 적용.
 
 ### 언제 쓰는가
 
-- v2.x로 뽑은 기존 파일들을 v3.0 규격에 맞추고 싶을 때
+- v2.x로 뽑은 기존 파일들을 v3.2 규격에 맞추고 싶을 때
 - **데이터 값은 절대 건드리지 않음** — 서식만 변경 (유형 2 마이그레이션)
 
 ### 사용법
@@ -164,7 +165,7 @@ python migrate_format.py <file_or_dir> [--dry-run] [--force]
 
 **옵션**:
 - `--dry-run`: 실제 저장 없이 변경 예정 내용만 표시
-- `--force`: 이미 v3.0 태그된 파일도 재적용
+- `--force`: 이미 v3.2 태그된 파일도 재적용
 
 **예**:
 ```
@@ -190,7 +191,7 @@ python migrate_format.py 90_Output/extracts/AF_extract_5_Xxx_2024.xlsx
 ### 안전장치
 
 - **자동 백업**: 마이그레이션 전 `<파일명>.bak.xlsx` 생성
-- **멱등성**: 이미 v3.0 태그된 파일은 skip
+- **멱등성**: 이미 v3.2 태그된 파일은 skip
 - **dry-run**: 실제 저장 전 확인 가능
 - **데이터 셀 값 불변**: 서식만 조작, `.value`는 읽기만
 
@@ -203,16 +204,67 @@ cp AF_extract_5_Xxx_2024.bak.xlsx AF_extract_5_Xxx_2024.xlsx
 
 ---
 
+## 2.5. migrate_to_v3.2.py — 헤더 마이그레이션 (v3.2 신규)
+
+### 목적
+
+v3.0/v3.1로 만든 47열 추출/마스터 파일을 v3.2의 48열 구조로 변환. AU(notes)를 AV로 시프트하고 AU 자리에 `analysis_set` 신규 열을 삽입한다.
+
+### 언제 쓰는가
+
+- v3.0/v3.1로 추출한 기존 파일을 v3.2 마스터에 머지하기 전에 1회
+- 마스터 파일 자체를 v3.2 스키마로 업그레이드할 때
+
+### 사용법
+
+```
+# 단일 파일
+python migrate_to_v3.2.py "90_Output/AF_CPG_data_extraction_심상송.xlsx"
+
+# 폴더 (재귀 아님)
+python migrate_to_v3.2.py 90_Output/extracts/
+
+# 와일드카드
+python migrate_to_v3.2.py "90_Output/extracts/*.xlsx"
+```
+
+### 처리 결과
+
+| 상태 | 의미 |
+|---|---|
+| `OK` | 47열 → 48열 변환 완료, `.v3.1.bak` 백업 생성 |
+| `SKIP_ALREADY_V3.2` | 이미 48열이므로 변환 불필요 |
+| `SKIP_UNEXPECTED_COL_COUNT` | 열 수가 47도 48도 아님 (수동 확인 필요) |
+| `SKIP_UNEXPECTED_LAST_HEADER` | 47번째 열이 `notes`가 아님 (변환 거부) |
+| `ERROR_LOCKED` | Excel에서 열려있어 변환 불가 |
+
+### 안전장치
+
+- **자동 백업**: 변환 전 `<원본>.v3.1.bak` 생성 (멱등 — 이미 백업 있으면 재생성 안 함)
+- **멱등성**: 이미 48열이면 skip (재실행 안전)
+- **헤더 정합 확인**: 47열인 경우 마지막 열명이 `notes`가 아니면 거부
+- **셀 서식 보존**: 폰트·정렬·배경·테두리·number_format 모두 유지
+
+### 권장 순서 (v3.0/v3.1 → v3.2 업그레이드)
+
+```
+1. python migrate_to_v3.2.py "90_Output/AF_CPG_data_extraction_<나>.xlsx"
+2. python migrate_to_v3.2.py "90_Output/extracts/*.xlsx"
+3. (선택) python migrate_format.py 90_Output/extracts/   # 서식 재정비
+```
+
+---
+
 ## 3. version_info.py — 버전 태깅
 
 ### 목적
 
-엑셀 파일 메타데이터에 스킬 버전(현재 `v3.0`)을 기록·조회. save_extract.py·migrate_format.py가 내부적으로 호출.
+엑셀 파일 메타데이터에 스킬 버전(현재 `v3.2`)을 기록·조회. save_extract.py·migrate_format.py가 내부적으로 호출.
 
 ### 기록 방식 (자동 선택)
 
 1. **Custom Document Property** (openpyxl 3.1+ 지원): 키 `cpg_skill_version`
-2. **Fallback: properties.keywords**: `cpg-skill=v3.0` 태그 삽입
+2. **Fallback: properties.keywords**: `cpg-skill=v3.2` 태그 삽입
 
 ### CLI 사용
 
@@ -220,7 +272,7 @@ cp AF_extract_5_Xxx_2024.bak.xlsx AF_extract_5_Xxx_2024.xlsx
 # 버전 읽기
 python version_info.py read <xlsx>
 
-# 버전 설정 (기본 v3.0)
+# 버전 설정 (기본 v3.2)
 python version_info.py set <xlsx>
 
 # 버전 수동 지정
@@ -233,8 +285,8 @@ python version_info.py set <xlsx> v3.1
 from version_info import set_version, get_version, SKILL_VERSION
 
 wb = openpyxl.load_workbook(path)
-set_version(wb)          # v3.0 기록
-v = get_version(wb)      # 'v3.0' or None
+set_version(wb)          # v3.2 기록
+v = get_version(wb)      # 'v3.2' or None
 wb.save(path)
 ```
 
@@ -277,7 +329,7 @@ python save_extract.py "99_Scratch/_tmp_2_Zhang_2018.json"
 
 | 증상 | 원인 | 조치 |
 |---|---|---|
-| `[ERROR] 템플릿 미존재` | `sample_v2.4.xlsx` 없음 | 스킬 폴더 재배포 확인 |
+| `[ERROR] 템플릿 미존재` | `sample_v2.6.xlsx` 없음 | 스킬 폴더 재배포 확인 |
 | `[VALIDATION ERROR] 기본정보 필수 키 누락` | JSON에 `번호`/`study_id`/`author`/`year` 중 누락 | JSON 재생성 |
 | `[VALIDATION ERROR] 시트 간 번호 불일치` | 3시트 중 일부 번호가 다름 | Claude 추출 단계 재검토 |
 | `[ERROR] 프로젝트 루트(90_Output 포함) 미탐지` | 스크립트가 프로젝트 밖에서 실행됨 | 프로젝트 루트 내부에서 실행 |
@@ -292,7 +344,8 @@ python save_extract.py "99_Scratch/_tmp_2_Zhang_2018.json"
 00_skills/cpg-data-extraction/
 ├── SKILL.md
 ├── CHANGELOG.md
-├── sample_v2.4.xlsx           ← 템플릿 (save_extract가 복사함)
+├── sample_v2.6.xlsx           ← 템플릿 (save_extract가 복사함, v3.2: 48열)
+├── sample_v2.4.xlsx           ← 구버전 호환용 (보관)
 ├── references/
 │   ├── af-outcomes.md
 │   ├── korean-medicine-intervention.md
@@ -301,6 +354,7 @@ python save_extract.py "99_Scratch/_tmp_2_Zhang_2018.json"
     ├── README.md              ← 이 문서
     ├── save_extract.py
     ├── migrate_format.py
+    ├── migrate_to_v3.2.py     ← v3.2 신규 (47→48열 헤더 마이그레이션)
     └── version_info.py
 ```
 
@@ -308,4 +362,5 @@ python save_extract.py "99_Scratch/_tmp_2_Zhang_2018.json"
 
 ## 변경 이력
 
+- **v3.2 (2026-05-19)**: cowork v2.6 변경사항 통합 — analysis_set 신열(48열), study_design 분류 개정, AF/RVR 엄격화, HRV 제외, SAE 통합 등. 템플릿 `sample_v2.4.xlsx` → `sample_v2.6.xlsx`. `BASIC_HEADERS` 47→48열. 신규 스크립트 `migrate_to_v3.2.py` (47열→48열 헤더 마이그레이션).
 - **v3.0 (2026-04-24)**: 최초 빌드. Phase 1 10개 결정 반영. save_extract·migrate_format·version_info 3종 세트.

@@ -1,10 +1,11 @@
 ---
 name: cpg-data-extraction
-version: 3.1
-updated: 2026-05-07
+version: 3.2
+updated: 2026-05-19
 description: >
-  심방세동 한의CPG 메타분석용 데이터 추출 스킬.
+  심방세동 한의CPG 메타분석용 데이터 추출 스킬 (Claude Code 환경용).
   PDF 논문에서 PICO 기반 기본정보, 아웃컴 수치, 한약 중재 정보를 추출해 논문별 단독 엑셀 파일(`90_Output/extracts/AF_extract_<번호>_<study_id>.xlsx`)에 저장한다. 마스터(`AF_CPG_data_extraction_심상송.xlsx`) 통합은 `merge-skill`이 처리한다. 근거표·RevMan 매핑·RoB 판정은 후속 스킬에서 처리한다.
+  v3.2: (1) study_design(N열) 분류 기준 개정 — "随机"/"随机分为"/"randomized" 표현만 있어도 RCT로 분류 (배정 방법 적절성은 RoB 2.0 D1에서 평가). 입원순서·번호순 등 systematic non-random allocation은 non-RCT. (2) 기본정보 신규 AU열 `analysis_set` 추가 (ITT/PP/NR, 메타분석 분류용). 기존 notes는 AV로 이동. 47열 → 48열. (3) af_type_other 코드 5(AF with RVR) 기준 엄격화 — Methods/Inclusion에 "치료 전 안정시 HR ≥ 110" 명시 시만. (4) HRV 및 파생 지표(SDNN/RMSSD/LF/HF/DC/AC 등) 완전 제외. (5) SAE 통합 추출(AE total과 동일 방식). (6) 분류 모호 케이스는 6B 불확실 항목 의무 기재. (7) v2.5의 comorbidity_code 6(高栓塞·高出血) 백포트. (8) merge-skill v1.1 → v2.6(서식 보존 알고리즘) 통합. (9) scripts/save_extract.py·migrate_format.py가 sample_v2.6.xlsx(48열) 참조하도록 갱신.
   v3.1: 작업자 간 토의용 `토의목록_<작업자>.md` append 동작 추가. 작업자가 명시 트리거할 때만 동작 (추출 흐름 무영향).
   v3.0: 저장 방식 아키텍처 변경 — 인라인 openpyxl 코드 → 외부 Python 스크립트(`scripts/save_extract.py`) 호출로 전환. 서식 규칙 3종(freeze panes, 번호·연도 숫자 서식) 추가. Z열 comparison_type에 `other: <설명>` 코드 신설. Python 3.8+ 및 openpyxl 3.0+ 필요.
   v2.4: 기본정보 시트 끝에 `notes`열(AU, 47번째) 추가. 작업자가 논문별 특이사항을 기록하는 용도. 추출 시 Claude는 공란으로 남긴다.
@@ -69,11 +70,18 @@ PDF 읽기 → 기본정보 추출 → RoB 근거 수집 → 한약 중재 추�
 
 PDF 전체를 읽고 다음을 파악한다.
 
-**연구 설계 분류**:
-- RCT: 무작위배정 대조군 임상시험
-- quasi-RCT: 무작위배정 불충분/불명확 ("随机分为"만 있으면 해당)
-- non-RCT: 비무작위 대조연구(CCT 포함)
-- 관찰연구: 코호트, 환자-대조군, 단일군 전후
+**연구 설계 분류 (v2.6 개정)**:
+
+| 분류 | 판정 기준 |
+|------|---------|
+| **RCT** | 다음 중 **하나라도** 충족: ① 무작위 배정 방법 명시(random number table, computer-generated, coin tossing, 密封信封 등), ② `随机`/`随机分为`/`randomized` 표현만 있고 방법 미명시 — 배정 방법의 적절성은 RoB 2.0 Domain 1에서 별도 평가하므로 추출 단계에서는 RCT로 분류 |
+| **quasi-RCT** | 의사무작위 방법(생년월일·환자번호 끝자리 등)이 명시된 경계 케이스 (실제 사용 빈도 낮을 것으로 예상) |
+| **non-RCT** | 다음 중 하나: ① **입원 순서·번호 순·요일·교대 배정** 등 systematic non-random allocation이 명시됨, ② 무작위 표현 자체가 없는 비무작위 대조연구(CCT 포함) |
+| **관찰연구** | 코호트, 환자-대조군, 단일군 전후 |
+
+> **본 CPG 운영 원칙**: 입원 순서 등 systematic allocation은 코크란 EPOC 정의상 quasi-RCT에 해당하나, 본 CPG에서는 메타분석 본 분석 제외 목적으로 **non-RCT로 분류**한다.
+> 
+> **모호 케이스 처리**: 배정 방법 단서가 부족하거나 의사무작위로 의심되나 명시되지 않은 경우 → 잠정 분류 후 **6B 채팅 출력 ⑤ 불확실 항목에 반드시 명시**하고 연구자 확인을 받는다. AI 단독 확정 금지.
 
 **PICO 파악**:
 - P: 환자 특성 (진단명, AF 유형, 유병기간, 동반질환)
@@ -123,9 +131,9 @@ PDF 전체를 읽고 다음을 파악한다.
 | 열 | 항목 | 코드 체계 |
 |----|------|---------|
 | R | **af_type_code** | **코드 숫자만 기재** (라벨·텍스트 금지). 1=발작성, 2=지속성, 3=영구성, 4=혼합/미특정 |
-| S | **af_type_other** | **코드 숫자만 기재**. 5=AF with RVR, 6=NVAF(논문 명시 시만), 7=기타. 해당 없으면 공란. |
+| S | **af_type_other** | **코드 숫자만 기재**. 5=AF with RVR, 6=NVAF(논문 명시 시만), 7=기타. 해당 없으면 공란. **코드 5 기준 (v2.6)**: Methods 또는 Inclusion criteria에 "치료 전 안정시 HR ≥ 110회/분" (`心率 ≥ 110次/分` 포함, `安静`/`静息` 표기 불요)이 **선정 조건으로 명시된 경우만**. VR/HR을 outcome으로 측정한 케이스(치료 전 평균 HR 100~110)는 코드 5 **불인정**. 모호 시 6B ⑤ 불확실 항목에 명시. |
 | T | af_type_text | AF 유형 원문 텍스트 |
-| U | **comorbidity_code** | **코드 숫자만**. P 동반질환 명시 시만. 일반 AF=`NA`. 1=RFCA(중복허용), 2=심부전, 3=심근경색/관상동맥질환, 4=갑상선/기타, 5=고혈압. 복수=쉼표. |
+| U | **comorbidity_code** | **코드 숫자만**. P 동반질환·위험도 분류 명시 시만. 일반 AF=`NA`. 1=RFCA(중복허용), 2=심부전, 3=심근경색/관상동맥질환, 4=갑상선/기타, 5=고혈압, 6=高栓塞·高出血 위험(CHA2DS2-VASc·HAS-BLED 점수 기준). 복수=쉼표. |
 | V | comorbidity_text | 동반질환 조건 원문. NA이면 `NA` |
 | W | tcm_pattern | 중의 변증(辨證) 포함 조건 명시 시 기재. 없으면 `NR` |
 | X | disease_duration | 이환기간 — 수치는 원문 그대로, **시간 단위는 영문약어** 통일 (`d`/`wk`/`mo`/`yr`). 예: `E: 2.27±0.98yr / C: 2.98±0.65yr` |
@@ -154,7 +162,7 @@ PDF 전체를 읽고 다음을 파악한다.
 | `KM_alone_vs_WM` | 한방 단독 vs 양방 단독 |
 | `KM+WM_vs_WM` | 한방+양방 병행 vs 양방 단독 |
 | `KM+WM_vs_KM` | 한방+양방 병행 vs 한방 단독 |
-| `other: <설명>` (v3.0 신규) | 위 4개에 해당하지 않는 경우 |
+| `other: <설명>` (v3.0) | 위 4개에 해당하지 않는 경우 |
 
 **`other` 기재 규칙** (v3.0):
 - 반드시 `other: `(소문자 + 콜론 + 공백) 접두 후 자유 서술
@@ -209,11 +217,30 @@ RoB 2.0 판정용 **11열 모두 추출** (누락 금지). 판정은 하지 않�
 
 도메인 분류·예시·기존 열과의 관계 등 상세는 `references/rob-extraction-fields.md` 참조.
 
-### 2F. 작업자 비고 (v2.4 신규)
+### 2F. 분석집단 분류 (v2.6 신규)
 
 | 열 | 항목 | 기재 유형 | 기재 내용 |
 |----|------|---------|-----------|
-| AU | **notes** | 사용자 | 추출 후 작업자가 해당 논문의 특이사항을 자유 기록하는 열 |
+| AU | **analysis_set** | 추출자 | 메타분석 합산 기준 분석집단 코드. 허용값: `ITT` / `PP` / `NR` 3종 (mITT는 ITT로 통합) |
+
+**기재 규칙 (v2.6)**
+
+- 값 후보: `ITT`(intention-to-treat, mITT 포함), `PP`(per-protocol), `NR`(논문에 분석집단 명시 없음)
+- 판정 근거는 **AN열 `rob_d2_analysis`**(원문 서술 그대로)에서 가져와 코드화한다. AN과 AU는 역할이 다르다:
+  - AN(rob_d2_analysis): **원문 서술 그대로**, RoB 2.0 D2 근거용
+  - AU(analysis_set): **메타분석 분류용 코드**, 합산 단위
+- 논문이 "intention-to-treat" 또는 "ITT 원칙으로 분석" 명시 → `ITT`
+- 논문이 "per-protocol" 또는 "PP 분석" 명시 → `PP`
+- mITT(modified ITT), full analysis set(FAS) → `ITT`로 통합
+- ITT/PP 명시 없이 "탈락자 제외하고 분석"으로만 서술 → `PP`로 분류 (실질이 PP)
+- 어느 쪽도 판별 불가 → `NR`
+- 모호 시 6B ⑤ 불확실 항목에 명시
+
+### 2G. 작업자 비고 (v2.4 신규, v2.6 위치 변경 AU→AV)
+
+| 열 | 항목 | 기재 유형 | 기재 내용 |
+|----|------|---------|-----------|
+| AV | **notes** | 사용자 | 추출 후 작업자가 해당 논문의 특이사항을 자유 기록하는 열 |
 
 **추출 단계 기재 규칙**
 
@@ -270,6 +297,8 @@ RoB 2.0 판정용 **11열 모두 추출** (누락 금지). 판정은 하지 않�
 ## 4단계: 아웃컴 목록화 및 자료 유형 판별
 
 논문에 보고된 **모든 아웃컴**을 대상으로 한다 (표준 + 비표준). 표준 아웃컴 목록은 `references/af-outcomes.md` 참조 — 이 목록에 있으면 Critical/Important 등급을 부여하고, 없으면 F열(importance)을 공란으로 둔다.
+
+> **v2.6 제외 아웃컴**: HRV 및 파생 지표(SDNN, RMSSD, pNN50, VLF, LF, HF, LF/HF, DC, AC 등)는 아웃컴 시트에 **행을 만들지 않는다**. AI열(outcomes_reported)에도 나열하지 않는다. 상세 목록은 `references/af-outcomes.md` §4 참조.
 
 **outcome_std (C열) 기재 규칙**:
 - **표준 아웃컴**: `af-outcomes.md` §3 매핑표의 C열 코드를 사용. 약어 우선, 없으면 짧은 영문명.
@@ -395,22 +424,29 @@ RoB 2.0 판정용 **11열 모두 추출** (누락 금지). 판정은 하지 않�
 - %만 보고된 경우: N×% 역산, 비고에 기록
 - Event 방향 필수 기록: T열에 `Event=유효` 또는 `Event=재발(불량결과)` 등
 
-### 5.3 이상반응 (Adverse Events) — 추출 방식
+### 5.3 이상반응 (AE) / 중대한 이상반응 (SAE) — 추출 방식
 
-이상반응은 **아웃컴 시트에 `AE total` 1행만 추출**한다 (논문마다 세부 유형이 다르므로 세부 유형별 별도 행 분리 불필요).
+이상반응은 **아웃컴 시트에 통합 1행으로 추출**한다 (논문마다 세부 유형이 다르므로 세부 유형별 별도 행 분리 불필요). AE와 SAE는 별개의 아웃컴이며, **논문이 둘 다 보고한 경우 두 행을 동시에 추출**한다.
 
 #### 이분형 행 구성 (아웃컴 시트)
 
 | outcome_std | data_type | Event_E | Total_E | Event_C | Total_C | notes |
 |---|---|---|---|---|---|---|
 | AE total | 이분형 | n | N | n | N | 두통 X건(E m/C m), 두현 X건(E m/C m), 위장반응 X건(E m/C m) |
+| SAE | 이분형 | n | N | n | N | 영구성 AF 진행 X건(E m/C m), HF 악화 X건(E m/C m), 허혈성 뇌졸중 X건(E m/C m), 심원성 사망 X건(E m/C m) |
 
-**추출 규칙**:
-- `AE total` 행 1개만 추출. Event = 이상반응 발생 건수 합계, Total = 각 군 전체 N.
-- 논문에서 이상반응 전체 합산값을 직접 보고한 경우 그 값을 기재한다.
-- 세부 유형별 합산이 전체와 다를 경우 notes에 명시한다.
+**AE total 추출 규칙**:
+- 논문이 보고한 **모든** 이상반응을 합산해 1행으로 추출 (가벼운 증상 포함).
+- Event = 이상반응 발생 건수 합계, Total = 각 군 전체 N.
+- 논문이 합산값을 직접 보고하면 그 값을 채택. 세부 유형별 합산이 전체와 불일치 시 notes에 명시.
 
-**고찰용 서술 (`notes` 열)**:
+**SAE 추출 규칙 (v2.6 신설)**:
+- **논문이 `SAE`/`Serious Adverse Events`/`严重不良反应` 등으로 묶어 명시 보고한 경우에만** 1행 통합 추출.
+- 본 스킬은 임의로 SAE 정의를 적용하지 않는다 — AF 재발·HF 악화 등이 SAE에 포함될지는 **논문이 SAE로 분류했는지 여부에만** 의존.
+- 효과성 outcome(AF 재발률, 동율동유지율 등)이 별도 보고되어 있으면 그 행은 별도로 또 추출한다 (이중 카운트 우려는 메타분석 단계에서 sensitivity로 처리).
+- 세부 사건명·건수는 notes(U열)에 텍스트로 기록 (`영구성 AF 진행 X건(E n/C n), HF 악화 X건(E n/C n), 허혈성 뇌졸중 X건(E n/C n), 심원성 사망 X건(E n/C n)` 형식).
+
+**고찰용 서술 (`notes` 열) — AE·SAE 공통**:
 - 세부 유형명과 각 건수를 텍스트로 기록한다.
 - 형식: `"두통 X건(E n/C n), 두현 X건(E n/C n), 위장반응 X건(E n/C n)"`
 - 건수 미보고 시: `"보고 유형: 두통, 두현, 위장반응 (세부 건수 NR — 원문 수기 확인 필요)"`
@@ -450,6 +486,10 @@ PDF 추출 → 채팅창 출력 → 연구자 확인/수정 → 엑셀 저장
 4. **한약 처방 확인 요청** — 처방 구성·법제·용량 등 전문가 검토 필요 항목
 5. **comparison_type 확인** — 판별 불명확한 경우 표시
 6. **RoB 11열 (AJ~AT) 추출 점검** — 11열 모두 값/NR 채워졌는지 확인. 누락 발견 시 보강 후 다음 진행.
+7. **분류 모호 케이스 (v2.6)** — 다음 항목 중 판정이 모호한 것이 있다면 ⑤ 불확실 항목에 **반드시 명시**하고 연구자 확인:
+   - N열 `study_design`: 무작위 배정 단서가 부족한 경우 (RCT vs quasi-RCT vs non-RCT)
+   - S열 `af_type_other` 코드 5: AF with RVR 판정 모호 (HR 임계값·선정기준 명시 여부)
+   - AU열 `analysis_set`: ITT/PP 명시 없이 분석집단이 불분명한 경우
 
 확인·수정 후 엑셀 업데이트. 완료 후 다음 논문으로 진행.
 
@@ -482,9 +522,9 @@ PDF 추출 → 채팅창 출력 → 연구자 확인/수정 → 엑셀 저장
 
 ## 7단계: 출력 형식 (엑셀 저장)
 
-### 7A. 세션별 단독 추출 파일 (v3.0: 외부 스크립트 호출 방식)
+### 7A. 세션별 단독 추출 파일 (v3.0: 외부 스크립트 호출 방식, v3.2: sample_v2.6.xlsx 참조)
 
-**저장 주체** (v3.0 변경): Claude는 openpyxl 코드를 직접 작성하지 않는다. 추출 결과를 JSON 임시 파일로 저장한 뒤 `scripts/save_extract.py`를 호출하여 저장한다. 스크립트가 sample_v2.4.xlsx 복사·검증·값 쓰기·서식 적용·저장을 일괄 처리.
+**저장 주체** (v3.0 변경): Claude는 openpyxl 코드를 직접 작성하지 않는다. 추출 결과를 JSON 임시 파일로 저장한 뒤 `scripts/save_extract.py`를 호출하여 저장한다. 스크립트가 sample_v2.6.xlsx 복사·검증·값 쓰기·서식 적용·저장을 일괄 처리.
 
 **출력 파일**:
 - **파일명**: `AF_extract_<번호>_<study_id>.xlsx`
@@ -492,24 +532,24 @@ PDF 추출 → 채팅창 출력 → 연구자 확인/수정 → 엑셀 저장
   - `<study_id>`: 기본정보 시트의 study_id 값 (예: `Li_2025`)
   - 결합 예시: `AF_extract_30_Li_2025.xlsx`
 - **저장 위치**: `90_Output/extracts/` (폴더 없으면 스크립트가 자동 생성)
-- **시트 구성**: 기본정보(47열) + 아웃컴(22열) + **한의중재_한약**(8열) — 3개 시트, `번호`로 연결
+- **시트 구성 (v3.2)**: 기본정보(48열) + 아웃컴(22열) + **한의중재_한약**(8열) — 3개 시트, `번호`로 연결
 
-**저장 워크플로우 (v3.0)**:
+**저장 워크플로우 (v3.0, v3.2 sample 갱신)**:
 
 ```
 1. 6단계 사용자 확인 완료 후 추출 데이터를 JSON 구조로 정리
 2. 임시 JSON 파일로 저장: 99_Scratch/_tmp_<번호>_<study_id>.json (UTF-8)
 3. 터미널 실행:
      python 00_skills/cpg-data-extraction/scripts/save_extract.py 99_Scratch/_tmp_<번호>_<study_id>.json
-4. 스크립트: sample_v2.4.xlsx 복사 → 검증 → 값 채움 → 서식 적용 → 저장 → 버전 태깅
+4. 스크립트: sample_v2.6.xlsx 복사 → 검증 → 값 채움 → 서식 적용 → 저장 → 버전 태깅
 5. 성공 시 임시 JSON 자동 삭제. 실패 시 임시 JSON 보존(디버깅용).
 ```
 
-**JSON 구조**:
+**JSON 구조 (v3.2: analysis_set 키 추가, 48열)**:
 
 ```json
 {
-  "기본정보": [ { "번호": 2, "study_id": "Zhang_2018", "author": "Zhang N et al.", "year": 2018, "...": "..." } ],
+  "기본정보": [ { "번호": 2, "study_id": "Zhang_2018", "author": "Zhang N et al.", "year": 2018, "...": "...", "analysis_set": "ITT", "notes": "" } ],
   "아웃컴":   [ { "번호": 2, "study_id": "Zhang_2018", "outcome_std": "...", "...": "..." } ],
   "한의중재_한약": [ { "번호": 2, "study_id": "Zhang_2018", "formula_name_kr": "...", "...": "..." } ]
 }
@@ -519,10 +559,11 @@ PDF 추출 → 채팅창 출력 → 연구자 확인/수정 → 엑셀 저장
 - 아웃컴 열 중 `E_val1` 등은 JSON에서 `\n` 없이 단순 키 사용 (엑셀 헤더 `E_val1\n(Mean/Event)`와 자동 매핑)
 - **필수 키**: `번호`(int), `study_id`(str). 기본정보에는 추가로 `author`(str), `year`(int)
 - 3시트의 `번호`·`study_id` 반드시 동일
+- **v3.2 신규 키**: `analysis_set` (값: `ITT` / `PP` / `NR`, mITT는 ITT로 통합. 모호 시 6B ⑤ 명시)
 
 **스크립트 자동 검증**:
 - JSON 필수 키·기본 타입 (③ 중간 엄격도)
-- 시트 3개, 헤더 47/22/8열 완전 일치
+- 시트 3개, 헤더 48/22/8열 완전 일치
 - 3시트 번호·study_id 일치 (④ 구조 검증)
 - 저장-고유 경고 4종 로그: 덮어쓰기, 셀 문자 수 초과, 한자 치환 의심, 파일 크기 비정상
 - 스크립트 상세: `scripts/README.md` 참조
@@ -579,9 +620,9 @@ PDF 추출 → 채팅창 출력 → 연구자 확인/수정 → 엑셀 저장
 
 - `references/korean-medicine-intervention.md` — 한약 중재 추출 상세 기준 (한의중재_한약 시트 열 정의·composition 기재 규칙 포함)
 - `references/rob-extraction-fields.md` — RoB 2.0 근거 11열(AJ~AT) 도메인별 기재 상세 기준
-- `references/af-outcomes.md` — 심방세동 CPG 표준 아웃컴 목록 + C열 매핑표
-- `sample_v2.4.xlsx` — 엑셀 출력 형식 샘플. 스크립트가 복사·재사용하는 템플릿 (기본정보 47열, notes열 포함)
-- `scripts/save_extract.py` (v3.0) — 저장 주력 스크립트 (JSON → xlsx)
-- `scripts/migrate_format.py` (v3.0) — v2.x 파일에 v3.0 서식 일괄 적용
-- `scripts/version_info.py` (v3.0) — 엑셀 파일에 스킬 버전 메타데이터 기록
+- `references/af-outcomes.md` — 심방세동 CPG 표준 아웃컴 목록 + C열 매핑표 + §4 제외 아웃컴(HRV)
+- `sample_v2.6.xlsx` — 엑셀 출력 형식 샘플. 스크립트가 복사·재사용하는 템플릿 (기본정보 48열: analysis_set + notes 포함)
+- `scripts/save_extract.py` (v3.2) — 저장 주력 스크립트 (JSON → xlsx). sample_v2.6.xlsx 템플릿 사용, 48열 BASIC_HEADERS 검증
+- `scripts/migrate_format.py` (v3.2) — v2.x/v3.0 파일에 v3.2 서식 + 48열 마이그레이션 일괄 적용
+- `scripts/version_info.py` (v3.2) — 엑셀 파일에 스킬 버전 메타데이터 기록
 - `scripts/README.md` — 스크립트 환경 요구·사용법·트러블슈팅

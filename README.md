@@ -18,6 +18,8 @@
 ## 버전 이력
 
 - **v3.0** — Claude Code 환경용 최초 배포 버전
+- **v3.1** — 토의목록 append 기능 추가
+- **v3.2** — cowork v2.6 변경사항 통합: study_design 분류 개정 (随机 표현만으로 RCT 인정), analysis_set 신규 AU열 (ITT/PP/NR, 48열), AF with RVR 코드 5 엄격화 (HR≥110), HRV 파생 지표 아웃컴 완전 제외, SAE 통합 추출, comorbidity 코드 6(高栓塞·高出血) 백포트, merge-skill 서식 보존 알고리즘 통합, scripts/save_extract.py가 sample_v2.6.xlsx(48열) 참조 (현재 버전)
 
 각 버전은 Git 태그로 관리되며 [Releases](https://github.com/trisss1011/af-cpg-extraction-skill-code/releases)에서 zip으로 다운로드할 수 있습니다.
 

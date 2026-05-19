@@ -8,6 +8,17 @@ desktop.ini
 .idea/
 *.swp
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files (migrate scripts produce these)
+*.bak
+*.bak.xlsx
+*.v2.5.1.bak
+*.v3.1.bak
+
 # Office temp
 ~$*.docx
 ~$*.xlsx

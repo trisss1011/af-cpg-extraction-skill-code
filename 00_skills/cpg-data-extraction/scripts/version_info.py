@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-version_info.py — v3.0 (cpg-data-extraction 버전 태깅 모듈)
+version_info.py — v3.2 (cpg-data-extraction 버전 태깅 모듈)
 
 엑셀 파일에 스킬 버전을 메타데이터로 기록·조회한다.
 save_extract.py 및 migrate_format.py가 import하여 사용.
@@ -12,12 +12,12 @@ save_extract.py 및 migrate_format.py가 import하여 사용.
 
 CLI 사용:
     python version_info.py read <xlsx>                 # 버전 읽기
-    python version_info.py set <xlsx> [version]        # 버전 설정 (인자 없으면 'v3.0')
+    python version_info.py set <xlsx> [version]        # 버전 설정 (인자 없으면 'v3.2')
 
 라이브러리 사용:
     from version_info import set_version, get_version, SKILL_VERSION
     set_version(wb)                 # wb는 openpyxl Workbook
-    ver = get_version(wb)           # 'v3.0' or None
+    ver = get_version(wb)           # 'v3.2' or None
 """
 
 import sys
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import openpyxl
 
-SKILL_VERSION = 'v3.0'
+SKILL_VERSION = 'v3.2'
 SKILL_NAME    = 'cpg-data-extraction'
 PROP_KEY      = 'cpg_skill_version'   # custom property key
 
@@ -127,7 +127,7 @@ def get_version(wb):
 def _usage():
     print('사용법:')
     print('  python version_info.py read <xlsx>')
-    print('  python version_info.py set <xlsx> [version]   # 기본 v3.0')
+    print('  python version_info.py set <xlsx> [version]   # 기본 v3.2')
     sys.exit(1)
 
 

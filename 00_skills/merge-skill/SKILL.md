@@ -1,7 +1,7 @@
 ---
 name: merge-skill
-version: 1.1
-updated: 2026-04-21
+version: 2.6
+updated: 2026-05-19
 description: >
   심방세동 한의CPG 데이터 추출 작업에서 세션별로 분리 저장된 추출 파일들(`90_Output/extracts/AF_extract_<번호>_<study_id>.xlsx`)을 마스터 엑셀 `AF_CPG_data_extraction_심상송.xlsx`에 안전하게 병합한다.
   동시 세션 추출의 lost update(쓰기 손실) 경쟁 조건을 회피하기 위해 추출은 단독 파일로 분리하고, 병합은 단일 시점에 원자적으로 처리한다.
@@ -20,8 +20,9 @@ description: >
 ```
 폴더 스캔 → 마스터/락 확인 → 스키마 검증 → 번호 키 검증 → 중복 검증 →
 미리보기(삽입 위치 포함) → 사용자 승인 → 백업 →
-번호 오름차순 정렬 삽입(메모리) → 행 수 검증 → 단일 save →
-사후 검증 → 추출 파일 이관 → 로그 기록 → 결과 보고
+row 2 스타일 템플릿 추출 → 번호 오름차순으로 insert_rows + 값/스타일 기록 →
+행 수 검증 → 단일 save →
+사후 검증(서식 spot check 포함) → 추출 파일 이관 → 로그 기록 → 결과 보고
 ```
 
 ## 파일 구조
@@ -50,6 +51,7 @@ description: >
 5. **사용자 승인**: 머지 실행 전 미리보기 → 명시적 승인. 자동 진행 금지.
 6. **Excel 잠금 차단**: 마스터에 락 파일이 있으면 즉시 중단. 진행 시 lost update 재발.
 7. **번호 기반 정렬 삽입** (v1.1): 신규 행은 A열 `번호`(정수) 오름차순 위치에 삽입. 기존 행의 순서는 건드리지 않음. 같은 번호 내부(아웃컴)는 추출 당시 순서(stable) 유지.
+8. **서식 보존** (v2.5.1): 기존 행은 `insert_rows`의 자동 시프트로 셀 서식이 그대로 보존된다. 신규 행은 row 2의 셀 스타일을 col별 템플릿으로 복사하여 시각적 일관성을 확보한다. 데이터 영역에 대한 `delete_rows` + 재기입은 셀 서식을 잃으므로 금지.
 
 ---
 
@@ -188,64 +190,123 @@ overwrite 처리 방식:
 - 11번째부터 삭제
 - 백업 정리 실패는 경고만 출력하고 머지는 계속 진행 (백업 정리 실패가 머지를 막을 이유는 없음)
 
-## 9단계: 메모리 머지 (번호 기반 정렬 삽입) + 행 수 검증
+## 9단계: 직접 시트 머지 (insert_rows + 서식 보존) + 행 수 검증
 
-`append` 방식은 폐기됨 (v1.0). v1.1부터는 **번호 기반 정렬 삽입**으로 처리한다.
+v2.5.1부터는 **`insert_rows`(ASCENDING) + 템플릿 스타일 복사** 방식으로 처리한다. v1.1까지 사용하던 `delete_rows` + 재기입 방식은 데이터 행의 셀 서식(폰트·정렬·wrap_text 등)을 잃기 때문에 폐기됨. 핵심은 (a) 시프트 자동 처리, (b) 신규 셀에만 템플릿 스타일을 복사한다는 것.
 
+```python
+from copy import copy
+
+# 1. 마스터 로드 (read-write)
+wb_master = openpyxl.load_workbook(MASTER)
+
+# 2. 머지 전 시트별 데이터행 수 기록 (master_before)
+# 데이터행 = 헤더(1행) 제외, 모든 셀이 None/빈 문자열인 행은 제외
+
+# 3. 시트별 row 2 셀 스타일을 col별 템플릿으로 추출
+#    (font, fill, border, alignment, number_format, protection)
+template = {}  # sheet -> col -> {style attrs}
+for s in SHEETS:
+    ws = wb_master[s]
+    template[s] = {}
+    for c in range(1, ws.max_column + 1):
+        src = ws.cell(row=2, column=c)
+        template[s][c] = {
+            "font":          copy(src.font),
+            "fill":          copy(src.fill),
+            "border":        copy(src.border),
+            "alignment":     copy(src.alignment),
+            "number_format": src.number_format,
+            "protection":    copy(src.protection),
+        }
+
+# 4. overwrite 대상(사용자 명시 재머지) 처리:
+#    - 마스터에서 해당 study_id 행을 모두 삭제 (역순 ws.delete_rows)
+#    - 제거 행 수 기록 (overwrite_removed)
+#    NOTE: overwrite는 행 단위 삭제이므로 다른 행 서식 손실은 없음
+
+# 5. 통과된 추출 파일을 번호(기본정보 A열) 오름차순 정렬 → sorted_extracts
+#    동률(같은 번호)은 스캔 시점 순서 유지
+
+# 6. sorted_extracts를 순서대로 시트에 직접 삽입 (ASCENDING)
+for extract in sorted_extracts:
+    n = extract.번호
+    for s in ['기본정보', '아웃컴', '한의중재_한약']:
+        ws = wb_master[s]
+        max_col = ws.max_column
+        ext_rows = [list(r) for r in extract[s]]   # 헤더 제외, 빈 행 제거
+        if not ext_rows:
+            continue
+        # 4B 통과 케이스(마스터에 신규 컬럼 추가): 행 끝에 None 패딩
+        ext_rows = [r + [None]*(max_col - len(r)) for r in ext_rows]
+
+        # 삽입 위치: 현재 시트 상태에서 "처음으로 번호 > n" 인 xlsx row
+        target = None
+        for r in range(2, ws.max_row + 1):
+            v = ws.cell(row=r, column=1).value
+            if v is not None and v > n:
+                target = r
+                break
+        if target is None:
+            # 마지막 데이터행 다음 (또는 시트가 비어 있으면 row 2)
+            last = max((r for r in range(2, ws.max_row + 1)
+                        if any(ws.cell(row=r, column=cc).value not in (None,'')
+                               for cc in range(1, max_col+1))),
+                       default=1)
+            target = last + 1
+
+        # ASCENDING 순서로 insert_rows: row >= target 셀을 자동 시프트(스타일 보존)
+        ws.insert_rows(target, amount=len(ext_rows))
+
+        # 신규 셀에 값 + 템플릿 스타일 복사
+        for ri, row in enumerate(ext_rows):
+            for ci in range(1, max_col + 1):
+                cell = ws.cell(row=target + ri, column=ci, value=row[ci-1])
+                t = template[s][ci]
+                cell.font          = copy(t["font"])
+                cell.fill          = copy(t["fill"])
+                cell.border        = copy(t["border"])
+                cell.alignment     = copy(t["alignment"])
+                cell.number_format = t["number_format"]
+                cell.protection    = copy(t["protection"])
+
+# 7. 행 수 검증
+#    expected = master_before + sum(extract 시트별 행 수) - overwrite_removed
+#    actual   = 시트별 비-빈 데이터행 수
+#    불일치 시 save 중단, 백업 복구 안내
+
+# 8. 단일 atomic save
+wb_master.save(MASTER)
 ```
-1. wb_master = openpyxl.load_workbook(MASTER)
-2. 머지 전 시트별 데이터행 수 기록 (master_before)
-3. 각 시트(기본정보, 아웃컴, 한의중재_한약)의 기존 데이터를 list로 읽음 (헤더 제외).
-   각 행을 tuple(값들)로 보관. A열(번호) 위치는 index 0.
 
-4. overwrite 대상(사용자 명시 재머지) 처리:
-   - 마스터 리스트에서 해당 study_id 행을 모두 제거
-   - 제거 행 수 기록 (overwrite_removed)
+**핵심 포인트**
 
-5. 통과된 추출 파일들을 번호(기본정보 A열) 오름차순으로 정렬 → sorted_extracts
-   동률(같은 번호)은 스캔 시점 순서 유지.
-
-6. sorted_extracts를 순서대로 처리:
-   for extract in sorted_extracts:
-     n = extract.번호
-     for sheet in ['기본정보', '아웃컴', '한의중재_한약']:
-       extract_rows = 해당 추출 파일의 시트 데이터행 list
-       # 신규 컬럼(4B 통과 케이스) → 각 행 끝에 None 패딩하여 마스터 컬럼 수와 맞춤
-       master_list = 마스터의 해당 시트 list
-       # 삽입 위치: 첫 번째 "master_list[i].A열 > n"인 i
-       # 없으면 insert_idx = len(master_list)  (맨 뒤)
-       insert_idx = first i such that master_list[i][0] > n  else len(master_list)
-       master_list[insert_idx:insert_idx] = extract_rows  # 블록 삽입, 내부 순서 유지
-
-7. 행 수 검증:
-   expected = master_before + sum(extract 시트별 행 수) - overwrite_removed
-   actual   = len(master_list) for each sheet
-   불일치 시 save 중단, 백업 복구 안내
-
-8. 각 시트의 데이터 영역(2행 이하)을 모두 clear하고 master_list를 row 2부터 다시 write
-   - 헤더(1행)는 절대 건드리지 않음 (서식 보존)
-   - 값만 write (폰트/배경 등 서식은 openpyxl 기본 적용)
-
-9. wb_master.save(MASTER)  # 단일 atomic save
-```
+- **ASCENDING 적용**: 추출을 번호 오름차순으로 처리하면서, 각 단계에서 *현재* 시트 상태를 기준으로 target을 다시 계산한다. DESCENDING은 마스터 max_row 이후 위치에 insert_rows를 호출할 때 시프트가 일어나지 않아 빈 행이 발생하므로 금지.
+- **insert_rows의 시프트 동작**: `ws.insert_rows(idx, n)` 은 row ≥ idx인 셀을 n만큼 아래로 이동. 이동된 기존 셀의 스타일은 그대로 따라간다. 새로 만들어지는 빈 셀은 기본 스타일이므로 **반드시 템플릿을 명시 복사**해야 한다.
+- **헤더(row 1)는 건드리지 않음**: insert_rows는 row 2 이상만 영향. row 1 서식은 자동 보존.
+- **delete_rows 금지(데이터 영역)**: 데이터행 일괄 삭제 + 재기입 패턴은 v2.5.1부터 금지. overwrite의 행 단위 delete_rows는 허용(다른 행 영향 없음).
 
 **삽입 위치 산정 예시**
 
-기존 기본정보(번호): `[2, 3, 4, 6, 17, 30, 36]`, 신규 번호 `n=31`
-→ 첫 "마스터 번호 > 31" 위치 = index 6 (값 36)
-→ 31을 index 6에 삽입 → `[2, 3, 4, 6, 17, 30, 31, 36]`
+기존 기본정보(번호): `[2, 3, 4, 6, 17, 30, 36]` (xlsx row 2~8), 신규 번호 `n=31`
+→ 처음으로 v > 31 인 row = row 8 (값 36)
+→ `ws.insert_rows(8, 1)` 후 row 8에 31 + 템플릿 스타일 기록
+→ 결과: `[2, 3, 4, 6, 17, 30, 31, 36]` (row 2~9)
 
 **기존이 비정렬인 경우**: linear scan 방식이라 "처음으로 번호가 커지는 위치"에 삽입된다. 기존 정렬이 깨져있어도 이 스킬은 기존 행을 재배치하지 않는다. 원칙 7 참조.
 
-**아웃컴 블록 삽입**: 한 논문의 여러 아웃컴 행은 추출 파일 내 원래 순서대로 마스터의 같은 위치에 통째로 들어간다. 내부 순서를 가르는 추가 정렬은 수행하지 않는다.
+**아웃컴 블록 삽입**: 한 논문의 여러 아웃컴 행은 추출 파일 내 원래 순서대로 마스터의 같은 위치에 통째로 들어간다(`insert_rows(target, n)` 한 번에 n행). 내부 순서를 가르는 추가 정렬은 수행하지 않는다.
 
 ## 10단계: 사후 검증
 
-저장된 마스터를 `read_only=True`로 다시 열어 행 수 재확인.
+저장된 마스터를 `read_only=True`로 다시 열어 행 수와 서식을 재확인한다.
 
-- 9단계 검증 통과했어도 디스크 저장 후 무결성 재확인
-- 불일치 시 백업 자동 복구 + 사용자 보고
-- 한자/특수문자 깨짐은 spot check로 확인 (예: 첫 번째 머지된 행의 `outcome_original` 컬럼 값 비교)
+- **행 수**: 9단계 검증 통과했어도 디스크 저장 후 무결성 재확인. 불일치 시 백업 자동 복구 + 사용자 보고.
+- **한자/특수문자**: spot check로 확인 (예: 첫 번째 머지된 행의 `outcome_original` 컬럼 값 비교).
+- **서식 보존 spot check** (v2.5.1):
+  - 기존 행 (예: row 5 col 3) 의 font_name / font_size / alignment.horizontal / alignment.wrap_text 가 백업과 동일한지 확인.
+  - 신규 행 (첫 머지 행) 의 동일 속성이 row 2 템플릿과 동일한지 확인.
+  - 둘 중 하나라도 어긋나면 백업 복구 후 사용자 보고.
 
 ## 11단계: 추출 파일 이관
 
@@ -312,7 +373,8 @@ Overwrite 대상:
 | 중복 study_id (overwrite 명시) | 마스터에서 해당 study_id 전 시트 행 삭제 후 신규 삽입 |
 | 백업 실패 | 머지 중단, 사용자 보고 |
 | 행 수 검증 실패 (save 전) | save 취소, 사용자 보고 |
-| 사후 검증 실패 (save 후) | 백업 자동 복구, 사용자 보고 |
+| 사후 검증 실패 (save 후, 행 수) | 백업 자동 복구, 사용자 보고 |
+| 사후 검증 실패 (save 후, 서식) | 백업 자동 복구, 사용자 보고. 9단계의 템플릿 추출/복사 누락 점검 |
 | 추출 파일 이관 실패 | 경고, 머지는 성공 처리 |
 
 ---
@@ -328,6 +390,9 @@ Overwrite 대상:
 - **헤더 불일치 강제 진행**: 데이터 컬럼 시프트 → invisible corruption
 - **맹목적 append** (v1.1 금지): 모든 신규 행은 반드시 번호 오름차순 위치에 삽입. 마스터 맨 뒤에 그냥 붙이는 방식 금지
 - **기존 행 재배치**: 기존 마스터 데이터의 순서는 머지 스킬이 건드리지 않음 (정렬이 깨져있어도 수정 권한 없음)
+- **`delete_rows` + 재기입** (v2.5.1 금지): 데이터 영역을 통째로 삭제 후 다시 쓰는 방식은 셀 서식(폰트·정렬·wrap 등)을 손실시킨다. 반드시 `insert_rows`(ASCENDING) + 템플릿 스타일 복사를 사용한다. 단, overwrite 처리에서의 행 단위 `delete_rows`(특정 study_id 행 제거)는 다른 행에 영향 없으므로 허용.
+- **DESCENDING 적용**: 추출을 번호 내림차순으로 처리하거나 plans을 desc 정렬하여 insert_rows를 호출하면, 마스터 max_row 이후 위치에서는 시프트가 일어나지 않아 빈 행이 발생한다. 반드시 ASCENDING.
+- **신규 셀 스타일 미복사**: insert_rows로 만들어진 빈 셀에 값만 쓰고 템플릿 스타일을 복사하지 않으면 기본 스타일(맑은 고딕 11pt 등)이 적용되어 기존 행과 시각적으로 어긋난다. 반드시 row 2 셀 스타일을 col별로 복사.
 
 ---
 
@@ -340,6 +405,19 @@ Overwrite 대상:
 ---
 
 ## 변경 이력
+
+### v2.6 (2026-05-19)
+- cpg-data-extraction v2.6과 버전 정렬 (스킬 동작 변경 없음, 호환성 메모 추가)
+- **호환성 주의**: cpg-data-extraction v2.6은 기본정보 시트가 47열 → 48열로 변경됨 (AU `analysis_set` 신열 + AV `notes`). v2.5.x 추출 파일을 v2.6 마스터에 직접 머지 시 4B 헤더 검증에서 거부된다. 사전에 `00_skills/cpg-data-extraction/scripts/migrate_to_v3.2.py`로 추출 파일을 48열로 마이그레이션한 뒤 머지할 것.
+- 마스터·추출 파일 모두 48열로 정렬되어 있으면 머지 알고리즘은 v2.5.1과 동일하게 동작 (insert_rows ASCENDING + 템플릿 스타일 복사).
+
+### v2.5.1 (2026-05-07)
+- 9단계 머지 알고리즘을 `delete_rows`(데이터 영역 일괄) + 재기입 → **`insert_rows`(ASCENDING) + 템플릿 스타일 복사** 로 변경
+- 데이터 행 셀 서식(Arial 9pt / 좌측·중앙 정렬 / wrap_text 등)이 머지 후 기본 스타일(맑은 고딕 11pt 등)로 바뀌던 결함 해결
+- row 2의 셀 스타일을 col별 템플릿(font/fill/border/alignment/number_format/protection)으로 추출하여 신규 셀에 복사 적용
+- 기존 행은 `insert_rows`의 자동 시프트로 스타일 자동 보존
+- 절대 금지에 "delete_rows + 재기입(데이터 영역)", "DESCENDING 적용", "신규 셀 스타일 미복사" 추가
+- 사고 사례: 2026-05-07 머지(`master_backup_20260507_021506.xlsx` 시점) 후 데이터 행 서식 손실 확인 → 백업 복구 후 본 알고리즘으로 재머지하여 정상화. 로그: `90_Output/extracts/merged/20260507_021506/merge_log.txt`
 
 ### v1.1 (2026-04-21)
 - 머지 방식을 `append`(맨 뒤에 붙이기) → **번호 기반 정렬 삽입**으로 변경

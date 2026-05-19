@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-migrate_format.py — v3.0 (cpg-data-extraction 서식 마이그레이션)
+migrate_format.py — v3.2 (cpg-data-extraction 서식 마이그레이션)
 
-v2.4 이전 추출 파일(`AF_extract_*.xlsx`)에 v3.0 추가 서식을 일괄 적용.
+v2.4 이전 추출 파일(`AF_extract_*.xlsx`)에 v3.0+ 추가 서식을 일괄 적용.
 유형 2(서식만 변경) 변경에 한정 — 데이터 값은 절대 건드리지 않음.
+
+v3.2 주의: 헤더가 47열 → 48열로 변경됨 (AU=analysis_set, AV=notes). 47열 추출 파일은
+먼저 `migrate_to_v3.2.py`로 48열 마이그레이션 후 본 스크립트 적용.
 
 적용 항목 (⑤ B+ 신규 서식):
   - freeze_panes = 'A2' (3시트 모두)
@@ -48,7 +51,7 @@ try:
     from version_info import set_version, get_version, SKILL_VERSION
 except ImportError:
     # 폴백: 직접 상수
-    SKILL_VERSION = 'v3.0'
+    SKILL_VERSION = 'v3.2'
     def set_version(wb, version=SKILL_VERSION):
         wb.properties.keywords = (wb.properties.keywords or '') + f' cpg-skill={version}'
     def get_version(wb):

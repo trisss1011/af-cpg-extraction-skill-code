@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-save_extract.py — v3.0 (cpg-data-extraction 스킬 저장 스크립트)
+save_extract.py — v3.2 (cpg-data-extraction 스킬 저장 스크립트)
 
 1편 논문 추출 결과(JSON)를 받아 단독 엑셀로 저장.
   입력: 99_Scratch/_tmp_<번호>_<study_id>.json
@@ -9,6 +9,11 @@ save_extract.py — v3.0 (cpg-data-extraction 스킬 저장 스크립트)
 
 사용법:
     python save_extract.py <input_json_path>
+
+v3.2 변경:
+  - 템플릿 sample_v2.4.xlsx → sample_v2.6.xlsx (48열)
+  - BASIC_HEADERS 47열 → 48열: ..., rob_other_coi, analysis_set, notes
+  - JSON 기본정보에 'analysis_set' 키 (값: ITT / PP / NR) 권장
 
 Exit codes:
     0  성공
@@ -45,8 +50,8 @@ except Exception:
 
 SCRIPT_DIR    = Path(__file__).resolve().parent      # scripts/
 SKILL_DIR     = SCRIPT_DIR.parent                     # cpg-data-extraction/
-TEMPLATE_PATH = SKILL_DIR / 'sample_v2.4.xlsx'        # ①A: sample 재사용
-SKILL_VERSION = 'v3.0'
+TEMPLATE_PATH = SKILL_DIR / 'sample_v2.6.xlsx'        # v3.2: 48열 (analysis_set + notes)
+SKILL_VERSION = 'v3.2'
 
 # 서식 상수 (⑤ B+)
 FONT_NAME        = 'Arial'
@@ -56,7 +61,7 @@ ROB_FILL_RGB     = '00D6EAF8'   # RoB (기본정보 AJ~AT 데이터 행)
 EXCLUDE_FILL_RGB = '00FADBD8'   # exclude=Y 행 전체
 
 # 열 인덱스 (1-indexed)
-# BASIC_HEADERS 기준: AJ(rob_d1_sequence)=36, ..., AT(rob_other_coi)=46, AU(notes)=47
+# v3.2: BASIC_HEADERS 기준 AJ(rob_d1_sequence)=36, ..., AT(rob_other_coi)=46, AU(analysis_set)=47, AV(notes)=48
 ROB_COL_START = 36  # AJ
 ROB_COL_END   = 46  # AT (inclusive)
 EXCLUDE_COL   = 10  # J열
@@ -84,9 +89,9 @@ BASIC_HEADERS = [
     'treatment_sessions','follow_up','funding','outcomes_reported',
     'rob_d1_sequence','rob_d1_concealment','rob_d1_baseline','rob_d2_blinding',
     'rob_d2_analysis','rob_d3_dropouts','rob_d3_reasons','rob_d4_assessor',
-    'rob_d5_protocol','rob_d5_outcome','rob_other_coi','notes'
+    'rob_d5_protocol','rob_d5_outcome','rob_other_coi','analysis_set','notes'
 ]
-assert len(BASIC_HEADERS) == 47, f"기본정보 헤더 47열 필요 (현재 {len(BASIC_HEADERS)})"
+assert len(BASIC_HEADERS) == 48, f"기본정보 헤더 48열 필요 (현재 {len(BASIC_HEADERS)})"
 
 # 아웃컴 헤더 (엑셀에는 \n 포함, JSON에서는 \n 없는 단순 키)
 OUTCOME_HEADERS_EXCEL = [

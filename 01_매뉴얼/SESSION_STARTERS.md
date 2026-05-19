@@ -1,7 +1,7 @@
 # SESSION_STARTERS — Claude Code 추출 작업 템플릿
 
-> cpg-data-extraction v3.0 및 merge-skill v1.1 전용. 매번 복붙해서 쓰세요.
-> 최종 갱신: 2026-04-24
+> cpg-data-extraction v3.2 및 merge-skill v2.6 전용. 매번 복붙해서 쓰세요.
+> 최종 갱신: 2026-05-19
 
 ---
 
@@ -19,7 +19,7 @@
 
 ```
 02_papers/<파일명>.pdf 논문을
-cpg-data-extraction 스킬 v3.0으로 추출해줘.
+cpg-data-extraction 스킬 v3.2으로 추출해줘.
 
 6단계(채팅 출력 → 연구자 확인)까지 먼저 진행하고,
 내가 OK하면 scripts/save_extract.py로 저장해.
@@ -43,7 +43,7 @@ cpg-data-extraction 스킬 v3.0으로 추출해줘.
 ## 2. 병렬 추출 (전략 A·속도 우선)
 
 ```
-02_papers/에서 <N>~<M>번 논문(<총편수>편)을 cpg-data-extraction 스킬 v3.0으로
+02_papers/에서 <N>~<M>번 논문(<총편수>편)을 cpg-data-extraction 스킬 v3.2으로
 병렬 추출해줘.
 
 규칙:
@@ -73,7 +73,7 @@ cpg-data-extraction 스킬 v3.0으로 추출해줘.
 99_Scratch/전략C_구축계획.md 먼저 읽고 현재 진행 상태 파악해.
 
 이제 02_papers/<번호>_<파일명>.pdf부터 이어서 추출해줘.
-cpg-data-extraction 스킬 v3.0 사용.
+cpg-data-extraction 스킬 v3.2 사용.
 ```
 
 **언제 쓰나**:
@@ -116,14 +116,21 @@ save_extract.py가 왜 거부했는지 확인하고 고쳐줘.
 ```
 90_Output/extracts/AF_extract_<번호>_<id>.xlsx를 재추출하고 싶어.
 기존 파일은 99_Scratch/overwrite_backup/에 백업한 뒤,
-02_papers/<파일>에서 cpg-data-extraction v3.0으로 새로 뽑아줘.
+02_papers/<파일>에서 cpg-data-extraction v3.2으로 새로 뽑아줘.
 ```
 
 ### 5-3. 서식만 마이그레이션 (v2.x 파일 받은 경우)
 
 ```
-90_Output/extracts/ 폴더의 v2.x 파일들을 v3.0 서식으로 일괄 마이그레이션해줘.
+90_Output/extracts/ 폴더의 v2.x 파일들을 v3.2 서식으로 일괄 마이그레이션해줘.
 migrate_format.py 사용. dry-run 먼저 보여주고 승인받은 뒤 실행.
+```
+
+### 5-5. 헤더 마이그레이션 (v3.0/v3.1 → v3.2, 47→48열)
+
+```
+90_Output/extracts/ 폴더의 v3.0/v3.1 추출 파일을 v3.2 헤더(48열)로 마이그레이션해줘.
+scripts/migrate_to_v3.2.py 사용. 단일 파일로 한 번 테스트 후 폴더 전체.
 ```
 
 ### 5-4. 추출 결과가 이상할 때
@@ -216,7 +223,7 @@ cancel
 1. **"검증 없이 바로 저장"** — 6단계 사용자 확인은 메타분석 품질의 핵심
 2. **"여러 논문 한 서브에이전트에 몰아넣기"** — 데이터 혼입 위험
 3. **마스터 엑셀을 Excel에서 연 채로 merge 실행** — 락 파일 때문에 거부됨
-4. **sample_v2.4.xlsx 직접 수정** — 스크립트가 매번 이 파일을 복사하므로 원본 손상 금지
+4. **sample_v2.6.xlsx 직접 수정** — 스크립트가 매번 이 파일을 복사하므로 원본 손상 금지
 5. **scripts/*.py 수정** — 스킬 업데이트 시에만, 단독으로 건드리지 말 것
 6. **90_Output/extracts/의 `.bak.xlsx` 삭제** — 마이그레이션 복구용
 7. **OneDrive 동기화 중에 저장 시도** — 락 충돌 가능, 잠시 기다린 뒤 시도
@@ -239,10 +246,10 @@ cancel
 
 ## 버전·환경
 
-- **스킬 버전**: cpg-data-extraction **v3.0** (2026-04-24 이후)
+- **스킬 버전**: cpg-data-extraction **v3.2** (2026-05-19 이후)
 - **Python**: 3.8+ (현재 설치: 3.12.10)
 - **openpyxl**: 3.0+ (현재 설치: 3.1.5)
-- **merge-skill**: v1.1
+- **merge-skill**: v2.6 (서식 보존 알고리즘 통합)
 
 ---
 

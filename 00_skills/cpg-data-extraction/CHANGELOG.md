@@ -2,6 +2,121 @@
 
 ---
 
+## v3.2 (2026-05-19) — cowork v2.6 변경사항 통합 + 48열 + scripts 갱신
+
+Cowork 라인에서 결정된 6개 변경(v2.6)을 Code 라인에 통합. 동시에 v2.5의 comorbidity 코드 6 백포트와 merge-skill v2.6(서식 보존) 통합. **스킬 동작 자체는 v3.0의 외부 스크립트 호출 아키텍처를 그대로 유지**하면서, 데이터 정의와 저장 템플릿만 갱신.
+
+### A. 데이터 정의 변경 (cowork v2.6과 동일)
+
+**1) study_design (N열) 분류 기준 개정**
+- **이전**: "随机分为"만 있으면 quasi-RCT
+- **변경**: `随机` / `随机分为` / `randomized` 표현만 있어도 **RCT**. 배정 방법 적절성은 RoB 2.0 D1에서 평가.
+- **non-RCT 신규 명시**: 입원 순서·환자 번호·요일·교대 배정 등 systematic non-random allocation 시 (코크란 EPOC상 quasi-RCT이나 본 CPG는 메타분석 본 분석 제외 목적으로 non-RCT 운영)
+- **모호 케이스**: 6B 채팅 출력 ⑤ 불확실 항목에 의무 기재. AI 단독 확정 금지.
+
+**2) 기본정보 신규 AU열 `analysis_set` (47열 → 48열)**
+- **신규**: AU `analysis_set` — 메타분석 합산 기준 분석집단 코드 (`ITT` / `PP` / `NR` 3종, mITT는 ITT로 통합)
+- **위치**: 기존 AU(notes) **앞에** 삽입. 기존 notes는 AV로 한 칸 시프트.
+- **AN과의 역할 분리**:
+  - AN `rob_d2_analysis`: 원문 서술 그대로 (RoB D2 근거용)
+  - AU `analysis_set`: 메타분석 분류용 코드 (합산 단위)
+
+**3) af_type_other 코드 5 (AF with RVR) 기준 엄격화**
+- **이전**: 코드 5 = AF with RVR (구체 기준 미규정)
+- **변경**: Methods/Inclusion criteria에 **"치료 전 안정시 HR ≥ 110회/분"** 명시 시만 코드 5
+- **불인정**: VR/HR을 outcome으로 측정한 케이스(치료 전 평균 HR 100~110)
+
+**4) HRV 및 파생 지표 아웃컴 완전 제외**
+- **이전**: 비표준 아웃컴으로 추출 가능
+- **변경**: 아웃컴 시트에 **행 자체 생성 금지**, AI열(outcomes_reported)에도 나열 금지
+- 제외 목록: SDNN/SDANN/RMSSD/pNN50/NN50/HRV triangular index/VLF/LF/HF/LF·HF/TP/DC/AC/Poincaré SD1·SD2/DFA/sample entropy (af-outcomes.md §4 신설)
+
+**5) SAE 통합 추출**
+- **신규**: AE total과 동일하게 **SAE 1행 통합 추출**. outcome_std = `SAE`.
+- 논문이 SAE/Serious Adverse Events/严重不良反应 등으로 묶어 명시 보고한 경우에만. AI 임의 SAE 정의 금지.
+- AE total과 SAE 둘 다 보고된 경우 두 행 동시 추출.
+
+**6) 분류 모호 케이스 처리 원칙 명문화**
+- 6B 채팅 출력에 **7번 항목 신설** — study_design / af_type_other 코드 5 / analysis_set 판정 모호 시 ⑤ 불확실 항목에 의무 명시
+
+### B. 누락 백포트 (cowork에서 가져옴)
+
+- **v2.5 comorbidity_code 6**: 高栓塞·高出血 위험(CHA2DS2-VASc·HAS-BLED 점수 기준) — code 라인에 누락되어 있던 항목 통합
+- **v2.5.1 merge-skill 서식 보존 알고리즘**: merge-skill v1.1 → v2.6 — `delete_rows` 데이터 영역 + 재기입 방식의 셀 서식 손실 결함을 `insert_rows`(ASCENDING) + 템플릿 스타일 복사 방식으로 해결
+
+### C. Code 고유 변경 (cowork에 없음)
+
+**1) scripts/save_extract.py 갱신**
+- `SKILL_VERSION` `v3.0` → `v3.2`
+- `TEMPLATE_PATH` `sample_v2.4.xlsx` → `sample_v2.6.xlsx`
+- `BASIC_HEADERS` 47열 → 48열 (`..., rob_other_coi, analysis_set, notes`)
+- `assert len(BASIC_HEADERS) == 48`
+- 열 인덱스 주석 갱신: AT=46, AU(analysis_set)=47, AV(notes)=48
+- `BASIC_NUM_FMT_ZERO` 인덱스 [1, 4, 18, 19, 21] 변동 없음 (R/S/U는 18/19/21 위치 동일)
+- JSON 구조 예시에 `analysis_set` 키 추가
+- 스크립트 자동 검증의 48/22/8열 기준 갱신
+
+**2) scripts/migrate_format.py 갱신**
+- `SKILL_VERSION` `v3.0` → `v3.2`
+- docstring에 v3.2 헤더 변경 경고 + `migrate_to_v3.2.py` 선행 실행 안내
+
+**3) scripts/version_info.py 갱신**
+- `SKILL_VERSION` `v3.0` → `v3.2`
+- CLI 도움말의 기본 버전 인자 갱신
+
+**4) scripts/migrate_to_v3.2.py 신규**
+- v3.0/v3.1 (47열) → v3.2 (48열) 헤더 마이그레이션 전용 스크립트
+- 기능: AU(notes)를 AV로 시프트, 새 AU 자리에 `analysis_set` 빈 열 삽입, 셀 서식 보존
+- 안전장치: 락 파일 체크, `.v3.1.bak` 자동 백업, 멱등성(이미 48열이면 SKIP_ALREADY_V3.2), 헤더 정합 확인, 사후 검증
+
+**5) sample_v2.6.xlsx 신설**
+- 기존 sample_v2.4.xlsx는 보관(구버전 호환용)
+- save_extract.py 신규 템플릿
+
+### D. SKILL.md 변경 요약
+
+- frontmatter version `3.1` → `3.2`, updated `2026-05-19`
+- description에 v3.2 9개 항목 요약 추가
+- 1단계 연구 설계 분류 블록 표 형식으로 재작성
+- 2C 표 S열 코드 5 본문 추가, U열 코드 6 본문 추가
+- **2F 섹션 분리**: 2F → `analysis_set`(신규), 2G → `notes`(위치 변경)
+- 2D Z열 `other: <설명>` 코드는 v3.0 그대로 유지
+- 4단계 도입부에 HRV 제외 안내 1줄 추가
+- 5.3 AE 섹션 → **AE/SAE 통합** 섹션으로 확장
+- 6B 채팅 출력에 7번 항목(모호 케이스) 신설
+- 7A 시트 구성 47열 → 48열, 샘플 참조 `sample_v2.6.xlsx`, JSON 구조에 `analysis_set` 키 추가
+- 부가 토의목록 (v3.1) 그대로
+- 참조 파일 목록 갱신 (scripts 4종 + sample_v2.6)
+
+### E. 신규/갱신 파일
+
+- `00_skills/cpg-data-extraction/SKILL.md` v3.2
+- `00_skills/cpg-data-extraction/CHANGELOG.md` (본 파일)
+- `00_skills/cpg-data-extraction/references/af-outcomes.md` — §4 HRV 제외 신설
+- `00_skills/cpg-data-extraction/references/rob-extraction-fields.md` — AN/AU 역할 분리
+- `00_skills/cpg-data-extraction/sample_v2.6.xlsx` 신설 (48열)
+- `00_skills/cpg-data-extraction/scripts/save_extract.py` v3.2
+- `00_skills/cpg-data-extraction/scripts/migrate_format.py` v3.2
+- `00_skills/cpg-data-extraction/scripts/migrate_to_v3.2.py` 신규
+- `00_skills/cpg-data-extraction/scripts/version_info.py` v3.2
+- `00_skills/cpg-data-extraction/scripts/README.md` v3.2
+- `00_skills/merge-skill/SKILL.md` v1.1 → v2.6 (서식 보존 알고리즘 + 호환성 메모)
+- `01_매뉴얼/AF_CPG_데이터추출_매뉴얼_v3.2.docx` 신설
+- `START_HERE.txt` v3.2 갱신
+- `README.md` v3.2 추가
+- `90_Output/AF_CPG_data_extraction_[작업자이름].xlsx` 48열 마이그레이션
+
+### F. 기존 추출 파일 호환성
+
+- v3.0/v3.1 추출 파일(47열)을 v3.2 마스터(48열)에 직접 머지 시 merge-skill 4B 헤더 검증에서 **거부**된다.
+- 해결: `scripts/migrate_to_v3.2.py`로 추출 파일을 48열로 마이그레이션 후 머지.
+
+  ```
+  python 00_skills/cpg-data-extraction/scripts/migrate_to_v3.2.py "90_Output/extracts/*.xlsx"
+  ```
+
+---
+
 ## v3.1 (2026-05-07) — 토의목록 append 기능 추가
 
 작업자 간 토의가 필요한 사안을 누적하기 위한 가벼운 협업 채널 신설. 추출 흐름과는 독립.

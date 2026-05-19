@@ -1,21 +1,21 @@
 ============================================================
-  심방세동 한의CPG · 데이터 추출 스킬 배포본 v3.0
-  배포일: 2026-04-27
+  심방세동 한의CPG · 데이터 추출 스킬 배포본 v3.2
+  배포일: 2026-05-19
 ============================================================
 
 가장 먼저 할 일
 
-  01_매뉴얼/AF_CPG_데이터추출_매뉴얼_v3.0.docx 를 열어 읽으세요.
+  01_매뉴얼/AF_CPG_데이터추출_매뉴얼_v3.2.docx 를 열어 읽으세요.
   처음 사용자는 매뉴얼의 「2. 사전 준비」를 따라 환경을 구축한 뒤
   「3. 작업 흐름」으로 추출을 시작합니다.
 
 폴더 구조 한눈에
 
-  AF CPG skill 배포용_ver.3.0/
+  AF CPG skill 배포용_ver.3.2/
   ├── START_HERE.txt                 ← 지금 이 파일
   ├── 00_skills/                     ← Claude Code 스킬 본체 (수정 금지)
-  │   ├── cpg-data-extraction/       (v3.0)
-  │   └── merge-skill/               (v1.1)
+  │   ├── cpg-data-extraction/       (v3.2)
+  │   └── merge-skill/               (v2.6)
   ├── 01_매뉴얼/                     ← 매뉴얼 + 세션 시작 템플릿
   ├── 02_papers/                     ← 추출할 PDF 논문을 여기에 넣기
   ├── 10_참고자료/                   ← 선정·배제 관리 엑셀
@@ -34,9 +34,24 @@
 
 스킬 버전
 
-  cpg-data-extraction  v3.0   (2026-04-24)
-  merge-skill          v1.1   (2026-04-21)
-  매뉴얼                v3.0   (2026-04-27)
+  cpg-data-extraction  v3.2   (2026-05-19)
+  merge-skill          v2.6   (2026-05-19)
+  매뉴얼                v3.2   (2026-05-19)
+
+v3.2 주요 변경 (2026-05-19)
+
+  - study_design 분류 개정: 随机/随机分为/randomized 표현만 있어도 RCT
+  - 기본정보 신규 AU열 analysis_set (ITT/PP/NR, 47→48열)
+  - af_type_other 코드 5 (AF with RVR) 기준 엄격화 (HR≥110 명시 시만)
+  - HRV 및 파생 지표(SDNN/RMSSD/LF/HF/DC/AC 등) 아웃컴 완전 제외
+  - SAE 통합 추출 (AE total과 동일 방식)
+  - comorbidity 코드 6 (高栓塞·高出血) 백포트
+  - merge-skill v1.1 → v2.6 (서식 보존 알고리즘 통합)
+
+기존 v3.0/v3.1로 추출한 파일이 있으면, 머지 전에 한 번 마이그레이션하세요:
+
+  python 00_skills/cpg-data-extraction/scripts/migrate_to_v3.2.py "90_Output/AF_CPG_data_extraction_<나>.xlsx"
+  python 00_skills/cpg-data-extraction/scripts/migrate_to_v3.2.py "90_Output/extracts/*.xlsx"
 
 이 폴더는 OneDrive·Dropbox 등 클라우드 동기화 폴더 안에 두지 마세요.
 권장 위치: C:\work\AF_CPG\  같은 로컬 디스크 경로.

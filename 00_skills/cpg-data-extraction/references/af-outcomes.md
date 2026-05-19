@@ -109,3 +109,24 @@
 1. **통용 약어** 있으면 약어 사용: `LVEDD`, `LVESD`, `BNP`, `Ang-II`, `NE`, `E/A ratio`
 2. **약어 없으면** 짧은 영문명: `TCM symptom score`, `Platelet aggregation rate`
 3. F열(importance)은 **공란**으로 둔다.
+
+---
+
+## 4. 제외 아웃컴 (v2.6 신설)
+
+다음 지표는 본 CPG 아웃컴 시트에서 **추출하지 않는다** (행 자체 생성 금지). 기본정보 시트 AI열(`outcomes_reported`)에도 나열하지 않는다.
+
+### 4.1 HRV 및 파생 지표
+
+| 분류 | 지표 |
+|------|------|
+| 시간영역 | SDNN, SDANN, RMSSD, pNN50, NN50, HRV triangular index |
+| 주파수영역 | VLF, LF, HF, LF/HF ratio, TP (total power) |
+| 비선형·파생 | DC (Deceleration Capacity), AC (Acceleration Capacity), Poincaré plot 지표(SD1, SD2), DFA, sample entropy |
+
+**제외 사유** (2026-05-18 연구팀 합의):
+- 측정 기준·시점·기기가 논문마다 상이하여 합산 불가
+- 임상적 해석이 어렵고 본 CPG 권고에 직접 기여하지 않음
+- 한약 RCT에서 부수적으로 보고되는 경우가 많으나 임상 유용성이 낮음
+
+**판정 모호 시**: 새로운 HRV 파생 지표(HRV 패밀리 여부 불확실)가 보고된 경우 → 6B ⑤ 불확실 항목에 명시 후 연구자 확인. AI 단독 판단으로 추출/제외 결정 금지.
